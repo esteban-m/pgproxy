@@ -1,6 +1,9 @@
 package protocol
 
-import "errors"
+import (
+	"bytes"
+	"errors"
+)
 
 var _ErrNoData = errors.New("no data")
 
@@ -13,6 +16,7 @@ type Type interface {
 var _ Type = new(Int8)
 var _ Type = new(Int16)
 var _ Type = new(Int32)
+var _ Type = new(ArrInt8)
 
 type Int8 struct {
 	fin   bool
@@ -94,7 +98,42 @@ func (i *Int32) RequiredSize() int {
 	return 4
 }
 
-type ArrInt8 []Int8
+type ArrInt8 struct {
+	Arr []*Int8
+	idx int
+}
+
+func NewArrInt8(length int) *ArrInt8 {
+	return &ArrInt8{Arr: make([]*Int8, 0, length), idx: 0}
+}
+
+func (a *ArrInt8) FromBytes(buf []byte) (rest []byte, fin bool, err error) {
+	for ; a.idx < cap(a.Arr); a.idx++ {
+		i := new(Int8)
+		buf, fin, err = i.FromBytes(buf)
+		if err != nil {
+			return
+		}
+		if fin {
+			continue
+		} else {
+			return buf, false, nil
+		}
+	}
+	return buf, true, nil
+}
+
+func (a *ArrInt8) ToBytes() []byte {
+	buf := new(bytes.Buffer)
+	for _, v := range a.Arr {
+		buf.Write(v.ToBytes())
+	}
+	return buf.Bytes()
+}
+
+func (a *ArrInt8) RequiredSize() int {
+	return len(a.Arr)
+}
 
 type ArrInt16 []Int16
 
