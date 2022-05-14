@@ -1,4 +1,4 @@
-package main
+package inbound_mysql
 
 import (
 	"encoding/binary"

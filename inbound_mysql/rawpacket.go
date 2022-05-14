@@ -1,11 +1,12 @@
-package main
+package inbound_mysql
 
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/EngineersBox/hexdump-format"
 	"io"
 	"strings"
+
+	"github.com/EngineersBox/hexdump-format"
 )
 
 type RawPacket struct {
@@ -15,19 +16,16 @@ type RawPacket struct {
 }
 
 func (this *RawPacket) ReadRawPacket(reader io.Reader) error {
+	// TODO support packet size over 16MB
 	arr := [4]byte{0, 0, 0, 0}
-	_, err := io.ReadFull(reader, arr[:3])
+	_, err := io.ReadFull(reader, arr[:])
 	if err != nil {
 		return err
 	}
 
+	this.SeqId = arr[3]
+	arr[3] = 0
 	this.Length = binary.LittleEndian.Uint32(arr[:])
-
-	_, err = io.ReadFull(reader, arr[:1])
-	if err != nil {
-		return err
-	}
-	this.SeqId = uint8(arr[0])
 
 	data := make([]byte, this.Length)
 
@@ -41,14 +39,12 @@ func (this *RawPacket) ReadRawPacket(reader io.Reader) error {
 }
 
 func (this *RawPacket) WriteRawPacket(writer io.Writer) error {
+	// TODO support packet size over 16MB
 	arr := [4]byte{0, 0, 0, 0}
 
 	binary.LittleEndian.PutUint32(arr[:], this.Length)
-	_, err := writer.Write(arr[:3])
-	if err != nil {
-		return err
-	}
-	_, err = writer.Write([]byte{this.SeqId})
+	arr[3] = this.SeqId
+	_, err := writer.Write(arr[:])
 	if err != nil {
 		return err
 	}

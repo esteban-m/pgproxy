@@ -1,13 +1,96 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"net"
+	"os"
+	"sync"
 	"time"
+
+	"github.com/goodplayer/pgproxy/inbound_mysql"
 )
 
+var (
+	paramSnifferLog  string
+	unknownPacketLog string
+
+	remoteMySQLAddr string
+	listenMySQLAddr string
+)
+
+func init() {
+	flag.StringVar(&paramSnifferLog, "sniffer", "", "-sniffer=sniffer.log")
+	flag.StringVar(&unknownPacketLog, "unknown_log", "", "-unknown_log=sniffer.log")
+	flag.StringVar(&remoteMySQLAddr, "remote", "192.168.31.231:3306", "-remote=0.0.0.0:23306")
+	flag.StringVar(&listenMySQLAddr, "local", "0.0.0.0:23306", "-local=192.168.31.231:3306")
+
+	flag.Parse()
+}
+
 func main() {
-	listenAddr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:23306")
+	//TODO default params
+	paramSnifferLog = "sniffer.log"
+	unknownPacketLog = "unknown_packet.log"
+
+	// sniffer handler
+	var snifferHandler inbound_mysql.SQLSnifferHandler
+	{
+		f, err := os.OpenFile(paramSnifferLog, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		if err != nil {
+			fmt.Println("open sniffer file error.", err)
+		} else {
+			mux := new(sync.Mutex)
+			snifferHandler = func(sql string) {
+				var obj = struct {
+					SQL string `json:"sql"`
+				}{
+					SQL: sql,
+				}
+				j, err := json.Marshal(obj)
+				if err != nil {
+					panic(err)
+				}
+				mux.Lock()
+				defer mux.Unlock()
+
+				if _, err := f.Write(j); err != nil {
+					fmt.Println("write sniffer file error.", err)
+					panic(errors.New("write sniffer file error"))
+				}
+				if _, err := f.WriteString("\r\n"); err != nil {
+					fmt.Println("write sniffer file error.", err)
+					panic(errors.New("write sniffer file error"))
+				}
+			}
+			defer f.Close()
+		}
+	}
+	// unknown log
+	var unknownPacketHandler inbound_mysql.UnknownPacketHandler
+	{
+		f, err := os.OpenFile(unknownPacketLog, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		if err != nil {
+			fmt.Println("open unknown packet log file error.", err)
+		} else {
+			mux := new(sync.Mutex)
+			unknownPacketHandler = func(packet *inbound_mysql.RawPacket, side inbound_mysql.EndpointSide) {
+				mux.Lock()
+				defer mux.Unlock()
+
+				if _, err := f.WriteString(fmt.Sprint(side, "|", packet.Data[0], "|", len(packet.Data), "\r\n")); err != nil {
+					fmt.Println("write unknown packet log file error.", err)
+					panic(errors.New("write unknown packet log file error"))
+				}
+			}
+			defer f.Close()
+		}
+	}
+
+	fmt.Println("start listening local mysql:", listenMySQLAddr)
+	listenAddr, err := net.ResolveTCPAddr("tcp", listenMySQLAddr)
 	if err != nil {
 		panic(err)
 	}
@@ -16,7 +99,8 @@ func main() {
 		panic(err)
 	}
 
-	destAddr, err := net.ResolveTCPAddr("tcp", "192.168.31.231:3306")
+	fmt.Println("start connecting remote mysql:", remoteMySQLAddr)
+	destAddr, err := net.ResolveTCPAddr("tcp", remoteMySQLAddr)
 	if err != nil {
 		panic(err)
 	}
@@ -30,7 +114,12 @@ func main() {
 		fmt.Println("new incoming connection:", tcpConn)
 
 		go func() {
-			mysqlConn := NewMysSQLConn()
+			var mysqlConn *inbound_mysql.MySQLConn
+			if snifferHandler == nil || unknownPacketHandler == nil {
+				mysqlConn = inbound_mysql.NewMySQLConn()
+			} else {
+				mysqlConn = inbound_mysql.NewMySQLConnWithSniffer(snifferHandler, unknownPacketHandler)
+			}
 
 			defer tcpConn.Close()
 
@@ -44,9 +133,17 @@ func main() {
 			destTcpConn.SetKeepAlive(true)
 			destTcpConn.SetKeepAlivePeriod(5 * time.Minute)
 
+			defer destTcpConn.Close()
+
+			err = mysqlConn.HandleConnPhase(tcpConn, destTcpConn)
+			if err != nil {
+				fmt.Println("handle conn phase error:", err)
+				return
+			}
+
 			go func() {
 				for {
-					rawPacket := new(RawPacket)
+					rawPacket := new(inbound_mysql.RawPacket)
 					err := rawPacket.ReadRawPacket(destTcpConn)
 					if err != nil {
 						tcpConn.Close()
@@ -55,7 +152,7 @@ func main() {
 						return
 					}
 
-					err = mysqlConn.HandleServerPacket(rawPacket)
+					err = mysqlConn.HandleCommandPhaseServerPacket(rawPacket)
 					if err != nil {
 						tcpConn.Close()
 						destTcpConn.Close()
@@ -74,7 +171,7 @@ func main() {
 			}()
 
 			for {
-				rawPacket := new(RawPacket)
+				rawPacket := new(inbound_mysql.RawPacket)
 				err := rawPacket.ReadRawPacket(tcpConn)
 				if err != nil {
 					tcpConn.Close()
@@ -83,14 +180,12 @@ func main() {
 					return
 				}
 
-				if mysqlConn.GetCurrentState() == StateCommand {
-					err = mysqlConn.HandleClientPacket(rawPacket)
-					if err != nil {
-						tcpConn.Close()
-						destTcpConn.Close()
-						fmt.Println("source -> dest: write error:", err)
-						continue // read buf until empty
-					}
+				err = mysqlConn.HandleCommandPhaseClientPacket(rawPacket)
+				if err != nil {
+					tcpConn.Close()
+					destTcpConn.Close()
+					fmt.Println("source -> dest: write error:", err)
+					continue // read buf until empty
 				}
 
 				err = rawPacket.WriteRawPacket(destTcpConn)
