@@ -1,10 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
+	"io"
 	"os"
+
+	"github.com/goodplayer/pgproxy/api"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 )
@@ -31,6 +37,10 @@ func init() {
 }
 
 func main() {
+
+	fmt.Println(pgAddr)
+	fmt.Println(sqlFile)
+
 	cfg, err := pgxpool.ParseConfig(pgAddr)
 	if err != nil {
 		panic(err)
@@ -48,5 +58,50 @@ func main() {
 	}
 	defer f.Close()
 
-	//TODO
+	// process file
+	committed := false
+	tx, err := pool.Begin(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		if !committed {
+			tx.Rollback(context.Background())
+		}
+	}()
+	for {
+		b := bufio.NewReader(f)
+		line, err := b.ReadString('\n')
+		if len(line) > 0 {
+			v := new(api.SnifferElement)
+			err := json.Unmarshal([]byte(line), v)
+			if err != nil {
+				fmt.Println("error format json:", line)
+				panic(err)
+			}
+			// process line
+			fmt.Println("==============processing sql=================")
+			fmt.Println(v.SQL)
+			t, err := tx.Exec(context.Background(), v.SQL)
+			if err != nil {
+				fmt.Println("process sql error.", err)
+				panic(err)
+			} else {
+				fmt.Println("result:", t)
+			}
+		}
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			panic(err)
+		}
+	}
+	if dryRun {
+		tx.Rollback(context.Background())
+		committed = true
+	} else {
+		tx.Commit(context.Background())
+		committed = true
+	}
+
 }

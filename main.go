@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/goodplayer/pgproxy/api"
+
 	"github.com/goodplayer/pgproxy/inbound_mysql"
 )
 
@@ -44,11 +46,7 @@ func main() {
 		} else {
 			mux := new(sync.Mutex)
 			snifferHandler = func(sql string) {
-				var obj = struct {
-					SQL string `json:"sql"`
-				}{
-					SQL: sql,
-				}
+				var obj = api.SnifferElement{SQL: sql}
 				j, err := json.Marshal(obj)
 				if err != nil {
 					panic(err)
