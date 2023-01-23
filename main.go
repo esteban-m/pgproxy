@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/goodplayer/pgproxy/api"
-
 	"github.com/goodplayer/pgproxy/inbound_mysql"
 )
 
@@ -26,8 +25,8 @@ var (
 func init() {
 	flag.StringVar(&paramSnifferLog, "sniffer", "", "-sniffer=sniffer.log")
 	flag.StringVar(&unknownPacketLog, "unknown_log", "", "-unknown_log=sniffer.log")
-	flag.StringVar(&remoteMySQLAddr, "remote", "192.168.31.231:3306", "-remote=0.0.0.0:23306")
-	flag.StringVar(&listenMySQLAddr, "local", "0.0.0.0:23306", "-local=192.168.31.231:3306")
+	flag.StringVar(&remoteMySQLAddr, "remote", "127.0.0.1:3306", "-local=127.0.0.1:3306")
+	flag.StringVar(&listenMySQLAddr, "local", "0.0.0.0:23306", "-remote=0.0.0.0:23306")
 
 	flag.Parse()
 }

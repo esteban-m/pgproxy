@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/EngineersBox/hexdump-format v1.1.0
+	github.com/blastrain/vitess-sqlparser v0.0.0-20201030050434-a139afbb1aba
 	github.com/jackc/pgx/v4 v4.16.1
 )
 
@@ -16,6 +17,7 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20200714003250-2b9c44734f2b // indirect
 	github.com/jackc/pgtype v1.11.0 // indirect
 	github.com/jackc/puddle v1.2.1 // indirect
+	github.com/juju/errors v0.0.0-20170703010042-c7d06af17c68 // indirect
 	golang.org/x/crypto v0.0.0-20220513210258-46612604a0f9 // indirect
 	golang.org/x/text v0.3.7 // indirect
 )
