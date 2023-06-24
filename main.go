@@ -5,8 +5,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/goodplayer/pgproxy/incoming"
 	"net"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -18,8 +20,9 @@ var (
 	paramSnifferLog  string
 	unknownPacketLog string
 
-	remoteMySQLAddr string
-	listenMySQLAddr string
+	remoteMySQLAddr    string
+	listenMySQLAddr    string
+	newListenMysqlAddr string
 )
 
 func init() {
@@ -27,6 +30,7 @@ func init() {
 	flag.StringVar(&unknownPacketLog, "unknown_log", "", "-unknown_log=sniffer.log")
 	flag.StringVar(&remoteMySQLAddr, "remote", "127.0.0.1:3306", "-local=127.0.0.1:3306")
 	flag.StringVar(&listenMySQLAddr, "local", "0.0.0.0:23306", "-remote=0.0.0.0:23306")
+	flag.StringVar(&newListenMysqlAddr, "newlocal", "0.0.0.0:33306", "-newlocal=0.0.0.0:33306")
 
 	flag.Parse()
 }
@@ -35,6 +39,13 @@ func main() {
 	//TODO default params
 	paramSnifferLog = "sniffer.log"
 	unknownPacketLog = "unknown_packet.log"
+
+	var handler *incoming.MysqlIncomingHandler
+	if h, err := doNewListenMysql(newListenMysqlAddr); err != nil {
+		panic(err)
+	} else {
+		handler = h
+	}
 
 	// sniffer handler
 	var snifferHandler inbound_mysql.SQLSnifferHandler
@@ -195,4 +206,15 @@ func main() {
 			}
 		}()
 	}
+
+	runtime.KeepAlive(handler)
+}
+
+func doNewListenMysql(addr string) (*incoming.MysqlIncomingHandler, error) {
+	pgbackend, err := incoming.NewPgBackend("postgres://admin:admin@localhost:5432/wordpress")
+	if err != nil {
+		return nil, err
+	}
+	in := incoming.NewMysqlIncomingHandler(addr, pgbackend)
+	return in, in.Startup()
 }
