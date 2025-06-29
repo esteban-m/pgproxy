@@ -1,0 +1,32 @@
+services:
+  pgproxy:
+    image: golang:1.22-alpine
+    container_name: pgproxy
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: sh -c "go mod download && go build -o /app/pgproxy . && ./pgproxy"
+    ports:
+      - "23306:23306"
+    depends_on:
+      - postgres
+    environment:
+      # PG_HOST: postgres
+      # PG_USER: admin
+      # PG_PASSWORD: admin
+      # PG_DB: wordpress
+
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: wordpress
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+volumes:
+  pg_data:
